@@ -1,0 +1,48 @@
+1. Rank 0 splits L channel into 4 chunks
+Rank 0 is the master process in MPI.
+It takes the Luminance (L) channel of the image (from LAB color space) and splits it row-wise into 4 pieces.
+Why? Each chunk can then be processed independently by a different process, enabling parallel computation.
+Example: If the image has 400 rows and 4 processes, each gets roughly 100 rows.
+
+2. Scatter chunks to ranks 1–3
+MPI scatter sends each chunk to a different process (including rank 0 itself).
+So now each process has its own portion of the L channel.
+This is like dividing the workload among multiple workers.
+
+3. Each rank computes local histogram
+Each process calculates the histogram of its chunk.
+Histogram = counts of each pixel intensity (0–255).
+Example: rank 1 only looks at rows 0–99, counts pixels, and creates its own 256-bin histogram.
+
+4. Reduce to global histogram
+MPI Reduce collects all the local histograms and adds them together to form a global histogram at rank 0.
+This is necessary because the histogram of the entire image depends on all pixels, not just one chunk.
+
+5. Rank 0 computes LUT
+LUT = Look-Up Table for mapping old pixel values to new equalized values.
+Formula: new value=(L−1)×cumulative probability of old values
+Rank 0 does this because it now has the global histogram, so it can compute the correct mapping for all pixels.
+
+6. Broadcast LUT to all ranks
+After computing LUT, rank 0 sends it to all processes.
+Now every rank knows how to transform its chunk using the same mapping.
+
+7. Each rank applies LUT to L chunk
+Each process updates its L channel chunk using the LUT:
+equalized_l = lut[my_l_chunk]
+This ensures that all chunks are equalized consistently.
+
+8. Gather equalized chunks
+MPI gather collects all the processed chunks back to rank 0.
+Rank 0 now has all pieces of the L channel, reassembled in the correct order.
+
+9. Reconstruct RGB image
+Rank 0 replaces the old L channel in the LAB image with the equalized L channel.
+Converts the LAB image back to RGB.
+Saves the final output image (and histogram if needed).
+
+✅ Key idea:
+Only the L channel is processed to preserve color.
+Parallelism is achieved by splitting rows across processes, computing histograms locally, then combining results.
+MPI handles distribution (scatter), combination (reduce), and collection (gather).
+
